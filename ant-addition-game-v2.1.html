@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>لعبة النملة وخصائص الجمع – v2.1 (Fix + تدريب التوزيع)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;800&display=swap" rel="stylesheet">
+  <style>
+    body{font-family:"Cairo",system-ui,-apple-system,Segoe UI,Roboto,Arial,"Noto Sans","Liberation Sans",sans-serif}
+    .ant{animation:bob 1.8s ease-in-out infinite;filter:drop-shadow(0 6px 10px rgba(0,0,0,0.15))}
+    @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+    .sparkle::after{
+      content:"";position:absolute;inset:-8px;
+      background:
+        radial-gradient(circle at 20% 30%, rgba(255,255,255,0.35) 0 6px, transparent 7px),
+        radial-gradient(circle at 80% 60%, rgba(255,255,255,0.25) 0 5px, transparent 6px),
+        radial-gradient(circle at 50% 10%, rgba(255,255,255,0.2) 0 4px, transparent 5px);
+      animation:twinkle 2.2s linear infinite;pointer-events:none
+    }
+    @keyframes twinkle{0%{opacity:.8;transform:scale(1)}50%{opacity:.4;transform:scale(1.03)}100%{opacity:.8;transform:scale(1)}}
+    .draggable{cursor:grab;user-select:none;touch-action:none}
+    .dragging{cursor:grabbing;transform:scale(1.03)}
+    .drop-ok{box-shadow:inset 0 0 0 3px rgba(34,197,94,.8)}
+    .drop-bad{box-shadow:inset 0 0 0 3px rgba(239,68,68,.85)}
+    .bg-fun{
+      background:radial-gradient(1200px 600px at 80% -10%, #d6f5ff 0%, #e8faff 30%, #e8f7ff 40%, #eaf6ff 55%, #eaf1ff 70%, #f3ecff 100%),
+                 linear-gradient(180deg, #cfe9ff 0%, #f5f7ff 100%);
+      min-height:100vh
+    }
+    .board{background:linear-gradient(180deg, rgba(255,255,255,0.7), rgba(255,255,255,0.6));backdrop-filter:blur(6px)}
+    .confetti{position:fixed;inset:0;pointer-events:none;overflow:hidden}
+  </style>
+</head>
+<body class="bg-fun">
+  <div class="max-w-6xl mx-auto px-4 py-6 md:py-8">
+    <!-- Header -->
+    <header class="flex flex-col md:flex-row items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="rounded-2xl bg-gradient-to-tr from-emerald-400 to-teal-500 p-3 text-white shadow-lg">
+          <span class="text-2xl">🐜</span>
+        </div>
+        <div>
+          <h1 class="text-2xl md:text-3xl font-extrabold text-slate-800">لعبة النملة وخصائص الجمع</h1>
+          <p class="text-slate-600 text-sm md:text-base">اسحب بطاقة الخاصية المناسبة إلى ظهر النملة لتصل إلى الهدف الصحيح</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <button id="newRoundBtn" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold shadow-md transition">جولة جديدة</button>
+        <button id="muteBtn" class="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-semibold shadow-md transition">كتم المؤثرات</button>
+        <!-- Logo (top-right) -->
+        <img src="https://d.top4top.io/p_35209x7gh1.png" alt="شعار الملتقى" class="h-10 w-10 md:h-12 md:w-12 rounded-full bg-white/80 p-1 shadow-md" />
+      </div>
+    </header>
+
+    <!-- Controls: property selector -->
+    <section class="mt-4">
+      <div class="board rounded-2xl p-4 shadow-md flex flex-col md:flex-row items-center justify-between gap-3">
+        <div class="text-slate-700 text-sm md:text-base">
+          الخاصية المستهدفة: <span id="propBadge" class="inline-block px-3 py-1 rounded-lg bg-slate-800 text-white text-sm font-bold">—</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <label for="propSelect" class="text-slate-600 text-sm">اختيار خاصية للتدريب:</label>
+          <select id="propSelect" class="px-3 py-2 rounded-xl border border-slate-200 shadow-sm bg-white text-slate-800">
+            <option value="auto">تلقائي (جميع الخصائص)</option>
+            <option value="comm">التبديلية</option>
+            <option value="assoc">التجميعية</option>
+            <option value="iden">المحايدة</option>
+            <option value="distr">التوزيعية (التوزيع)</option>
+          </select>
+          <button id="forceBtn" class="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-md">تمرين الآن</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Score + Level -->
+    <section class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div class="board rounded-2xl p-4 shadow-md">
+        <div class="text-slate-500 text-sm">المستوى</div>
+        <div id="level" class="text-2xl font-extrabold text-slate-800">1</div>
+      </div>
+      <div class="board rounded-2xl p-4 shadow-md">
+        <div class="text-slate-500 text-sm">النقاط</div>
+        <div id="score" class="text-2xl font-extrabold text-emerald-600">0</div>
+      </div>
+      <div class="board rounded-2xl p-4 shadow-md">
+        <div class="text-slate-500 text-sm">المحاولات</div>
+        <div id="tries" class="text-2xl font-extrabold text-slate-800">0 / 3</div>
+      </div>
+      <div class="board rounded-2xl p-4 shadow-md">
+        <div class="text-slate-500 text-sm">الوقت</div>
+        <div id="time" class="text-2xl font-extrabold text-fuchsia-600">60</div>
+      </div>
+    </section>
+
+    <!-- Problem + Goal -->
+    <section class="mt-6 grid md:grid-cols-3 gap-6">
+      <div class="md:col-span-2 board rounded-2xl p-5 shadow-md">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-xl font-bold text-slate-800">المسألة</h2>
+          <div class="text-slate-500 text-sm">اختر الخاصية المناسبة</div>
+        </div>
+        <div id="problemBox" class="flex flex-wrap items-center gap-3 text-2xl md:text-3xl font-extrabold text-indigo-700"></div>
+        <p id="hint" class="mt-3 text-slate-600 text-sm md:text-base"></p>
+      </div>
+      <div class="board rounded-2xl p-5 shadow-md relative sparkle">
+        <h2 class="text-xl font-bold text-slate-800 mb-3">الهدف</h2>
+        <div id="goalBox" class="text-2xl md:text-3xl font-extrabold text-emerald-700"></div>
+        <p class="mt-2 text-slate-600 text-sm">أوصل النملة إلى هذه الصورة الصحيحة</p>
+      </div>
+    </section>
+
+    <!-- Game Area -->
+    <section class="mt-6 grid md:grid-cols-3 gap-6">
+      <!-- Cards -->
+      <div class="md:col-span-1 board rounded-2xl p-5 shadow-md">
+        <h3 class="text-lg font-bold text-slate-800 mb-3">بطاقات الخصائص</h3>
+        <div id="cards" class="grid grid-cols-1 gap-3"></div>
+      </div>
+
+      <!-- Ant Path -->
+      <div class="md:col-span-2 board rounded-2xl p-5 shadow-md">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-lg font-bold text-slate-800">اسحب البطاقة إلى ظهر النملة ثم اضغط انطلق</h3>
+          <div class="flex items-center gap-2">
+            <button id="runBtn" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-md transition">انطلق 🐜</button>
+            <button id="resetCarryBtn" class="px-3 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 font-semibold transition">إزالة البطاقة</button>
+          </div>
+        </div>
+
+        <div class="relative overflow-hidden rounded-2xl p-4 md:p-6" style="background: linear-gradient(180deg,#eafff2 0%, #ffffff 70%);">
+          <!-- Path -->
+          <div class="absolute inset-x-0 bottom-16 md:bottom-20 h-2 bg-gradient-to-r from-emerald-200 via-emerald-300 to-emerald-200 rounded-full"></div>
+
+          <!-- Ant with carry slot -->
+          <div id="antWrap" class="relative z-10 flex items-center gap-3">
+            <svg id="antSVG" class="ant" width="110" height="90" viewBox="0 0 110 90" aria-label="نملة لطيفة">
+              <g transform="translate(5,10)">
+                <ellipse cx="60" cy="35" rx="22" ry="16" fill="#1f2937"/>
+                <ellipse cx="38" cy="35" rx="16" ry="12" fill="#111827"/>
+                <ellipse cx="22" cy="35" rx="10" ry="8" fill="#0f172a"/>
+                <circle cx="18" cy="33" r="3.2" fill="white"/>
+                <circle cx="19" cy="33" r="1.5" fill="#0f172a"/>
+                <path d="M12 27 Q 4 16 10 8" stroke="#0f172a" stroke-width="2" fill="none"/>
+                <path d="M16 26 Q 14 14 22 8" stroke="#0f172a" stroke-width="2" fill="none"/>
+                <path d="M50 48 l-10 16" stroke="#0f172a" stroke-width="3"/>
+                <path d="M64 48 l-2 16" stroke="#0f172a" stroke-width="3"/>
+                <path d="M78 48 l10 16" stroke="#0f172a" stroke-width="3"/>
+              </g>
+            </svg>
+            <!-- Carry slot -->
+            <div id="carrySlot" class="draggableTarget relative min-w-[120px] max-w-[220px] px-3 py-2 rounded-xl bg-white/90 border-2 border-dashed border-indigo-300 text-indigo-700 font-bold shadow-sm">
+              بطاقة النملة هنا
+              <div id="carryChip" class="hidden mt-2 text-sm rounded-lg bg-indigo-600 text-white px-2 py-1 w-fit"></div>
+            </div>
+          </div>
+
+          <!-- Goals line -->
+          <div class="mt-16 md:mt-20 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div id="goalA" class="goalOption relative rounded-2xl p-4 bg-white/90 border border-emerald-200 hover:border-emerald-400 transition shadow-sm">
+              <div class="text-slate-500 text-sm mb-1">صورة ١</div>
+              <div class="text-2xl font-extrabold text-emerald-700" data-label="A">—</div>
+              <div class="text-sm text-slate-600 mt-2">هل هذه تطابق الهدف؟</div>
+            </div>
+            <div id="goalB" class="goalOption relative rounded-2xl p-4 bg-white/90 border border-emerald-200 hover:border-emerald-400 transition shadow-sm">
+              <div class="text-slate-500 text-sm mb-1">صورة ٢</div>
+              <div class="text-2xl font-extrabold text-emerald-700" data-label="B">—</div>
+              <div class="text-sm text-slate-600 mt-2">هل هذه تطابق الهدف؟</div>
+            </div>
+            <div id="goalC" class="goalOption relative rounded-2xl p-4 bg-white/90 border border-emerald-200 hover:border-emerald-400 transition shadow-sm">
+              <div class="text-slate-500 text-sm mb-1">صورة ٣</div>
+              <div class="text-2xl font-extrabold text-emerald-700" data-label="C">—</div>
+              <div class="text-sm text-slate-600 mt-2">هل هذه تطابق الهدف؟</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Feedback -->
+    <section class="mt-6">
+      <div id="feedback" class="board rounded-2xl p-4 shadow-md text-center text-lg font-bold text-slate-800">اختر بطاقة الخاصية الصحيحة ثم اضغط انطلق 🐜</div>
+    </section>
+  </div>
+
+  <!-- Footer -->
+  <footer class="mt-8 max-w-6xl mx-auto px-4 pb-8">
+    <div class="board rounded-2xl p-4 text-center text-slate-700 text-sm md:text-base">
+      برمجة: أ/ فاطمة هزازي • ملتقى معلمي ومعلمات الرياضيات • ملتقى التعليم التفاعلي
+    </div>
+  </footer>
+
+  <div id="confetti" class="confetti"></div>
+
+  <script>
+  'use strict';
+  if (!Object.values) Object.values = (obj) => Object.keys(obj).map(k => obj[k]);
+
+  const PROPERTIES = [
+    { id:"comm", name:"الخاصية التبديلية", short:"تبديلية",
+      color:"from-pink-500 to-fuchsia-500",
+      hint:"يمكننا تغيير ترتيب العددين: أ + ب = ب + أ",
+      apply:(a,b)=>({ text:`${a} + ${b} = ${b} + ${a}`, goal:a+b }),
+      transforms:(a,b)=>[`${a} + ${b}`, `${b} + ${a}`] },
+    { id:"assoc", name:"الخاصية التجميعية", short:"تجميعية",
+      color:"from-indigo-500 to-violet-500",
+      hint:"يمكننا تغيير أماكن الأقواس: (أ + ب) + ج = أ + (ب + ج)",
+      apply:(a,b,c)=>({ text:`(${a} + ${b}) + ${c} = ${a} + (${b} + ${c})`, goal:a+b+c }),
+      transforms:(a,b,c)=>[`(${a} + ${b}) + ${c}`, `${a} + (${b} + ${c})`] },
+    { id:"iden", name:"الخاصية المحايدة (الصفر)", short:"محايدة",
+      color:"from-emerald-500 to-teal-500",
+      hint:"إضافة الصفر لا تغيّر العدد: ن + 0 = ن",
+      apply:(a)=>({ text:`${a} + 0 = ${a}`, goal:a }),
+      transforms:(a)=>[`${a} + 0`, `0 + ${a}`] },
+    { id:"distr", name:"التوزيع على الجمع", short:"توزيعية",
+      color:"from-amber-500 to-orange-500",
+      hint:"يمكننا توزيع الضرب على الجمع: ك × (أ + ب) = ك×أ + ك×ب",
+      apply:(k,a,b)=>({ text:`${k} × (${a} + ${b}) = ${k*a} + ${k*b}`, goal:k*(a+b) }),
+      transforms:(k,a,b)=>[`${k}×(${a}+${b})`, `${k*a} + ${k*b}`] }
+  ];
+
+  const ui = {
+    level: document.getElementById('level'),
+    score: document.getElementById('score'),
+    tries: document.getElementById('tries'),
+    time: document.getElementById('time'),
+    problemBox: document.getElementById('problemBox'),
+    goalBox: document.getElementById('goalBox'),
+    cards: document.getElementById('cards'),
+    runBtn: document.getElementById('runBtn'),
+    resetCarryBtn: document.getElementById('resetCarryBtn'),
+    newRoundBtn: document.getElementById('newRoundBtn'),
+    muteBtn: document.getElementById('muteBtn'),
+    carrySlot: document.getElementById('carrySlot'),
+    carryChip: document.getElementById('carryChip'),
+    feedback: document.getElementById('feedback'),
+    confetti: document.getElementById('confetti'),
+    goals: {
+      A: document.getElementById('goalA').querySelector('[data-label="A"]'),
+      B: document.getElementById('goalB').querySelector('[data-label="B"]'),
+      C: document.getElementById('goalC').querySelector('[data-label="C"]'),
+    },
+    goalCards: {
+      A: document.getElementById('goalA'),
+      B: document.getElementById('goalB'),
+      C: document.getElementById('goalC'),
+    },
+    hint: document.getElementById('hint'),
+    antWrap: document.getElementById('antWrap'),
+    propSelect: document.getElementById('propSelect'),
+    propBadge: document.getElementById('propBadge'),
+    forceBtn: document.getElementById('forceBtn'),
+  };
+
+  let state = { level:1, score:0, tries:0, time:60, runningTimer:null, current:null, carrying:null, isMuted:true };
+
+  const rand = (min,max)=> Math.floor(Math.random()*(max-min+1))+min;
+  const shuffle = (arr)=> arr.map(v=>({v,r:Math.random()})).sort((a,b)=>a.r-b.r).map(o=>o.v);
+
+  function toPretty(expr){ return String(expr).replace(/\*/g,"×").replace(/\s*\+\s*/g," + ").replace(/\s*×\s*/g," × "); }
+  function pulse(el){ if(!el) return; el.animate([{transform:'scale(1)'},{transform:'scale(1.05)'},{transform:'scale(1)'}],{duration:250}); }
+  function setFeedback(text,type="info"){
+    ui.feedback.textContent = text;
+    const base="board rounded-2xl p-4 shadow-md text-center text-lg font-bold ";
+    ui.feedback.className = type==="good" ? base+"text-emerald-700 bg-emerald-50"
+      : type==="bad" ? base+"text-rose-700 bg-rose-50"
+      : base+"text-slate-800";
+  }
+
+  function startTimer(){
+    clearInterval(state.runningTimer);
+    ui.time.textContent = state.time;
+    state.runningTimer = setInterval(()=>{
+      if(state.time>0){ state.time--; ui.time.textContent = state.time; }
+      else{ clearInterval(state.runningTimer); gameOver(); }
+    },1000);
+  }
+  function gameOver(){ setFeedback("انتهى الوقت! اضغط جولة جديدة للمتابعة.","bad"); ui.runBtn.disabled=true; }
+
+  // ----- Render property cards -----
+  let draggingEl=null,startX=0,startY=0,origX=0,origY=0,ghost=null;
+
+  function renderCards(){
+    ui.cards.innerHTML="";
+    PROPERTIES.forEach(p=>{
+      const card=document.createElement('div');
+      card.className = `draggable group rounded-2xl p-4 bg-gradient-to-tr ${p.color} text-white shadow-md active:scale-95 transition`;
+      card.setAttribute('data-prop', p.id);
+      card.innerHTML = `
+        <div class="flex items-center justify-between">
+          <div class="text-lg font-extrabold">${p.name}</div>
+          <div class="text-sm bg-white/20 rounded-lg px-2 py-0.5">${p.short}</div>
+        </div>
+        <div class="text-xs mt-2 opacity-95">${p.hint}</div>`;
+      makeDraggable(card);
+      ui.cards.appendChild(card);
+    });
+  }
+
+  function makeDraggable(el){
+    el.addEventListener('pointerdown', (e)=>{
+      draggingEl = el;
+      el.setPointerCapture(e.pointerId);
+      startX=e.clientX; startY=e.clientY;
+      const rect=el.getBoundingClientRect();
+      origX=rect.left; origY=rect.top;
+      ghost=el.cloneNode(true);
+      ghost.style.position="fixed";
+      ghost.style.left=rect.left+"px";
+      ghost.style.top=rect.top+"px";
+      ghost.style.width=rect.width+"px";
+      ghost.style.zIndex=50;
+      ghost.classList.add("dragging");
+      document.body.appendChild(ghost);
+      document.body.style.userSelect="none";
+      highlightCarry(true);
+    });
+  }
+  function onPointerMove(e){
+    if(!draggingEl||!ghost) return;
+    const dx=e.clientX-startX, dy=e.clientY-startY;
+    ghost.style.left=(origX+dx)+"px"; ghost.style.top=(origY+dy)+"px";
+    const slotRect=ui.carrySlot.getBoundingClientRect();
+    const gRect=ghost.getBoundingClientRect();
+    const overlap = !(gRect.right < slotRect.left || gRect.left > slotRect.right || gRect.bottom < slotRect.top || gRect.top > slotRect.bottom);
+    ui.carrySlot.classList.toggle('drop-ok', overlap);
+    ui.carrySlot.classList.toggle('drop-bad', !overlap);
+  }
+  function onPointerUp(e){
+    if(!draggingEl||!ghost) return;
+    const slotRect=ui.carrySlot.getBoundingClientRect();
+    const gRect=ghost.getBoundingClientRect();
+    const overlap = !(gRect.right < slotRect.left || gRect.left > slotRect.right || gRect.bottom < slotRect.top || gRect.top > slotRect.bottom);
+    if(overlap){
+      const id=draggingEl.getAttribute('data-prop');
+      setCarry(id);
+      pulse(ui.carrySlot);
+      setFeedback("رائع! اضغط انطلق لتتحرك النملة.","info");
+    }
+    ghost.remove(); ghost=null;
+    draggingEl.releasePointerCapture(e.pointerId);
+    draggingEl=null;
+    document.body.style.userSelect="";
+    highlightCarry(false);
+    ui.carrySlot.classList.remove('drop-ok','drop-bad');
+  }
+  function highlightCarry(on){ ui.carrySlot.style.boxShadow = on ? "0 0 0 4px rgba(99,102,241,0.5)" : "none"; }
+  window.addEventListener('pointermove', onPointerMove);
+  window.addEventListener('pointerup', onPointerUp);
+
+  function setCarry(id){
+    state.carrying=id;
+    const prop=PROPERTIES.find(p=>p.id===id);
+    if(!prop) return;
+    ui.carryChip.textContent=prop.name;
+    ui.carryChip.classList.remove('hidden');
+    if(ui.carrySlot.firstChild) ui.carrySlot.childNodes[0].textContent="النملة تحمل:";
+  }
+  function clearCarry(){
+    state.carrying=null;
+    ui.carryChip.classList.add('hidden');
+    ui.carrySlot.childNodes[0].textContent="بطاقة النملة هنا";
+  }
+
+  // ----- Round generation -----
+  function makeNumbers(){ return { a:rand(2,9), b:rand(2,9), c:rand(1,9), k:rand(2,5) }; }
+
+  function buildRound(prop, {a,b,c,k}){
+    let problemHTML="", goalText="", correctDisplay="", distractors=[];
+    if(prop.id==="comm"){
+      const left = `${a} + ${b}`; const right = `${b} + ${a}`;
+      problemHTML = `
+        <span class="px-3 py-1 rounded-xl bg-indigo-50 text-indigo-700">${toPretty(left)}</span>
+        <span class="text-slate-500">↔</span>
+        <span class="px-3 py-1 rounded-xl bg-indigo-50 text-indigo-700">${toPretty(right)}</span>`;
+      goalText = `${a+b}`;
+      correctDisplay = toPretty(right);
+      distractors = [ toPretty(`${a} + ${a}`), toPretty(`${b} + ${b}`) ];
+    }else if(prop.id==="assoc"){
+      const left = `(${a} + ${b}) + ${c}`; const right = `${a} + (${b} + ${c})`
+      problemHTML = `
+        <span class="px-3 py-1 rounded-xl bg-violet-50 text-violet-700">${toPretty(left)}</span>
+        <span class="text-slate-500">↔</span>
+        <span class="px-3 py-1 rounded-xl bg-violet-50 text-violet-700">${toPretty(right)}</span>`;
+      goalText = `${a+b+c}`;
+      correctDisplay = toPretty(right);
+      distractors = [ toPretty(`${a}+${b}+${c}`), toPretty(`(${a}+${c})+${b}`) ];
+    }else if(prop.id==="iden"){
+      const left = `${a} + 0`; const right = `${a}`;
+      problemHTML = `
+        <span class="px-3 py-1 rounded-xl bg-emerald-50 text-emerald-700">${toPretty(left)}</span>
+        <span class="text-slate-500">↔</span>
+        <span class="px-3 py-1 rounded-xl bg-emerald-50 text-emerald-700">${toPretty(right)}</span>`;
+      goalText = `${a}`;
+      correctDisplay = toPretty(right);
+      distractors = [ toPretty(`${a} + 1`), toPretty(`${a} + ${a}`) ];
+    }else if(prop.id==="distr"){
+      const left = `${k}×(${a}+${b})`; const right = `${k*a} + ${k*b}`;
+      problemHTML = `
+        <span class="px-3 py-1 rounded-xl bg-amber-50 text-amber-700">${toPretty(left)}</span>
+        <span class="text-slate-500">↔</span>
+        <span class="px-3 py-1 rounded-xl bg-amber-50 text-amber-700">${toPretty(right)}</span>`;
+      goalText = `${k*(a+b)}`;
+      correctDisplay = toPretty(right);
+      distractors = [ toPretty(`${k} + (${a}+${b})`), toPretty(`${k}×${a} + ${b}`) ];
+    }
+    return { propId: prop.id, problemHTML, goalText, correctDisplay, distractors, propName: prop.name };
+  }
+
+  function newRound(nextLevel=false, forcePropId=null){
+    if(nextLevel) state.level++;
+    ui.level.textContent = state.level;
+    state.tries=0; ui.tries.textContent = `${state.tries} / 3`;
+    state.time=Math.max(40, 70 - state.level*5);
+    startTimer();
+    clearCarry();
+    setFeedback("اختر الخاصية المناسبة ثم انطلق!","info");
+
+    let prop;
+    const sel = ui.propSelect.value;
+    if(forcePropId) prop = PROPERTIES.find(p=>p.id===forcePropId);
+    else if(sel !== "auto") prop = PROPERTIES.find(p=>p.id===sel);
+    else prop = PROPERTIES[rand(0,PROPERTIES.length-1)];
+
+    const round = buildRound(prop, makeNumbers());
+    state.current = round;
+
+    ui.problemBox.innerHTML = round.problemHTML;
+    ui.goalBox.textContent = round.goalText;
+    ui.hint.textContent = "تلميح: " + prop.hint;
+    ui.propBadge.textContent = prop.name;
+
+    const labels=["A","B","C"];
+    const shuffled = shuffle([round.correctDisplay, round.distractors[0], round.distractors[1]]);
+    labels.forEach((L,i)=>{
+      ui.goals[L].textContent = shuffled[i];
+      ui.goalCards[L].dataset.correct = (shuffled[i]===round.correctDisplay) ? "1" : "0";
+    });
+
+    ui.runBtn.disabled=false;
+  }
+
+  // ----- Ant move -----
+  function animateAntTo(targetCard, success, onEnd){
+    const wrapRect = ui.antWrap.parentElement.getBoundingClientRect();
+    const antRect = ui.antWrap.getBoundingClientRect();
+    const targetRect = targetCard.getBoundingClientRect();
+    const fromX = antRect.left - wrapRect.left;
+    const toX = (targetRect.left + targetRect.width/2) - wrapRect.left - 40;
+    const distance = Math.max(10, Math.abs(toX-fromX));
+    const duration = Math.min(2000, 600 + distance*2);
+    const start = performance.now();
+    ui.antWrap.style.position="relative";
+    function step(t){
+      const p = Math.min(1,(t-start)/duration);
+      const x = fromX + (toX-fromX)*p;
+      ui.antWrap.style.left = x+"px";
+      if(p<1) requestAnimationFrame(step);
+      else{
+        ui.antWrap.animate([{transform:"translateY(0)"},{transform:"translateY(-10px)"},{transform:"translateY(0)"}],{duration:400,easing:"ease-out"});
+        onEnd && onEnd();
+      }
+    }
+    requestAnimationFrame(step);
+  }
+
+  // ----- Controls -----
+  function wireControls(){
+    ui.runBtn.addEventListener('click', ()=>{
+      if(!state.current) return;
+      if(!state.carrying){ setFeedback("ضع بطاقة خاصية على ظهر النملة أولًا.","bad"); pulse(ui.carrySlot); return; }
+      const correctCard = Object.values(ui.goalCards).find(c=>c.dataset.correct==="1");
+      animateAntTo(correctCard,true,()=>{
+        const chosenProp=state.carrying;
+        if(chosenProp === state.current.propId){
+          state.score+=10; ui.score.textContent=state.score;
+          setFeedback("أحسنت! إجابة صحيحة 🎉","good");
+          makeConfetti();
+          setTimeout(()=>{ ui.antWrap.style.left="0px"; newRound(true); }, 900);
+        }else{
+          state.tries++; ui.tries.textContent=`${state.tries} / 3`;
+          setFeedback("محاولة غير صحيحة. جرّب بطاقة أخرى!","bad");
+          ui.antWrap.animate([{transform:'translateX(0)'},{transform:'translateX(6px)'},{transform:'translateX(-6px)'},{transform:'translateX(0)'}],{duration:300});
+          setTimeout(()=>{ ui.antWrap.style.left="0px"; }, 400);
+          if(state.tries>=3){ setFeedback("انتهت المحاولات لهذه المسألة. جولة جديدة!","bad"); setTimeout(()=>newRound(false),800); }
+        }
+      });
+    });
+
+    ui.resetCarryBtn.addEventListener('click', ()=>{ clearCarry(); setFeedback("تمت إزالة البطاقة من ظهر النملة.","info"); });
+    ui.newRoundBtn.addEventListener('click', ()=>{ ui.antWrap.style.left="0px"; newRound(false); });
+    ui.muteBtn.addEventListener('click', ()=>{ state.isMuted=!state.isMuted; ui.muteBtn.textContent = state.isMuted?"كتم المؤثرات":"تشغيل المؤثرات"; pulse(ui.muteBtn); });
+    ui.forceBtn.addEventListener('click', ()=>{
+      const sel = ui.propSelect.value;
+      const force = sel === "auto" ? "distr" : sel;
+      ui.antWrap.style.left="0px";
+      newRound(false, force);
+    });
+  }
+
+  function makeConfetti(){
+    ui.confetti.innerHTML="";
+    const colors=["#22c55e","#10b981","#06b6d4","#a855f7","#f59e0b","#ef4444","#3b82f6"];
+    const count=100;
+    for(let i=0;i<count;i++){
+      const s=document.createElement('span'); const size=rand(6,12);
+      s.style.position="absolute"; s.style.width=size+"px"; s.style.height=size+"px";
+      s.style.background=colors[rand(0,colors.length-1)];
+      s.style.left=rand(0,100)+"%"; s.style.top="-20px"; s.style.opacity="0.95";
+      s.style.transform=`rotate(${rand(0,360)}deg)`; s.style.borderRadius=rand(0,1)?"2px":"50%";
+      const duration=rand(2000,3800); const delay=rand(0,600);
+      s.animate([{transform:'translateY(0) rotate(0deg)',opacity:0.95},{transform:`translateY(${window.innerHeight+60}px) rotate(${rand(90,360)}deg)`,opacity:0.95}],{duration,delay,easing:"cubic-bezier(.2,.7,.2,1)"});
+      setTimeout(()=>s.remove(), duration+delay+150);
+      ui.confetti.appendChild(s);
+    }
+  }
+
+  function init(){ renderCards(); wireControls(); newRound(false, null); }
+  if(document.readyState==="loading") document.addEventListener('DOMContentLoaded', init); else init();
+  </script>
+</body>
+</html>
